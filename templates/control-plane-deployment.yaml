@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: control-plane
+  name: control-plane
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: control-plane
+  template:
+    metadata:
+      labels:
+        app: control-plane
+    spec:
+      initContainers:
+      - name: wait-for-db
+        image: postgres:latest
+        command:
+        - sh
+        - -c
+        - |
+          until pg_isready -h postgres-service -U '{{ .Values.database.user }}';
+          do
+            echo "waiting for database"
+            sleep 2
+          done
+        env:
+        - name: POSTGRES_USER
+          value: '{{ .Values.database.user }}'
+      - name: wait-for-redis
+        image: redis:latest
+        command:
+        - sh
+        - -c
+        - |
+          until (echo PING | redis-cli -h redis-service);
+          do
+            echo "waiting for redis"
+            sleep 2
+          done
+      containers:
+      - env:
+        - name: POSTGRES_HOST
+          value: postgres-service
+        - name: POSTGRES_USER
+          value: '{{ .Values.database.user }}'
+        - name: POSTGRES_DB
+          value: '{{ .Values.database.name }}'
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: POSTGRES_PASSWORD
+              name: postgres-secret
+        - name: GODEBUG
+          value: "netdns=cgo"
+        image: '{{ .Values.controlPlane.image.repository }}:{{ .Values.controlPlane.image.tag }}'
+        imagePullPolicy: Always
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        name: control-plane
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5

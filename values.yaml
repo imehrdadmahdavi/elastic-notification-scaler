@@ -1,0 +1,22 @@
+controlPlane:
+  image:
+    repository: imehrdadmahdavi/control-plane
+    tag: latest
+database:
+  image:
+    repository: postgres
+    tag: latest
+  name: mydatabase
+  password: MySecureStaticPassword
+  storageSize: 5Gi
+  user: user
+  host: postgres-service
+worker:
+  replicaCount: 1
+  image:
+    repository: imehrdadmahdavi/worker
+    tag: latest
+redis:
+  image:
+    repository: redis
+    tag: latest
