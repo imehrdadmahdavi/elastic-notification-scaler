@@ -15,17 +15,12 @@ spec:
         app: worker
     spec:
       initContainers:
-      - name: wait-for-control-plane
-        image: curlimages/curl:latest
+      - name: wait-for-redis
+        image: redis:6.2
         command:
-        - sh
-        - -c
-        - |
-          until curl --silent --fail control-plane:8080/ready;
-          do
-            echo "waiting for control-plane"
-            sleep 2
-          done
+        - "sh"
+        - "-c"
+        - "until redis-cli -h redis-service ping; do echo 'waiting for redis'; sleep 2; done"
       containers:
       - name: worker
         image: "{{ .Values.worker.image.repository }}:{{ .Values.worker.image.tag }}"
@@ -39,9 +34,9 @@ spec:
             secretKeyRef:
               name: postgres-secret
               key: POSTGRES_PASSWORD
+        - name: POSTGRES_DB
+          value: "{{ .Values.database.name }}"
         - name: POD_NAME
           valueFrom:
             fieldRef:
               fieldPath: metadata.name
-        - name: POSTGRES_DB
-          value: "{{ .Values.database.name }}"

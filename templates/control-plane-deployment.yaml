@@ -21,25 +21,19 @@ spec:
         - sh
         - -c
         - |
-          until pg_isready -h postgres-service -U '{{ .Values.database.user }}';
-          do
+          until pg_isready -h postgres-service -U '{{ .Values.database.user }}'; do
             echo "waiting for database"
             sleep 2
           done
         env:
         - name: POSTGRES_USER
           value: '{{ .Values.database.user }}'
-      - name: wait-for-redis
-        image: redis:latest
+      - name: wait-for-worker
+        image: busybox:1.28
         command:
-        - sh
-        - -c
-        - |
-          until (echo PING | redis-cli -h redis-service);
-          do
-            echo "waiting for redis"
-            sleep 2
-          done
+        - "sh"
+        - "-c"
+        - "until nslookup worker-service; do echo 'waiting for worker'; sleep 2; done"
       containers:
       - env:
         - name: POSTGRES_HOST
@@ -53,8 +47,6 @@ spec:
             secretKeyRef:
               key: POSTGRES_PASSWORD
               name: postgres-secret
-        - name: GODEBUG
-          value: "netdns=cgo"
         image: '{{ .Values.controlPlane.image.repository }}:{{ .Values.controlPlane.image.tag }}'
         imagePullPolicy: Always
         livenessProbe:
