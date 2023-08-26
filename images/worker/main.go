@@ -1,3 +1,4 @@
+// worker
 package main
 
 import (
@@ -7,7 +8,9 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
+	"time"
 
 	"github.com/go-redis/redis/v8"
 	_ "github.com/lib/pq"
@@ -34,25 +37,12 @@ func setupDatabase() {
 
 func registerWorkerToRedis(rdb *redis.Client) {
 	podName := os.Getenv("POD_NAME")
-
-	// Check if the worker is already registered
-	exists := rdb.SIsMember(ctx, "workers", podName).Val()
-	if !exists {
-		// Add worker name to the set
-		rdb.SAdd(ctx, "workers", podName)
-
-		// Register worker in the stream with status RUNNING and no IDs
-		rdb.XAdd(ctx, &redis.XAddArgs{
-			Stream: "worker-status",
-			Values: map[string]interface{}{"name": podName, "status": "RUNNING", "ids": "[]"},
-		})
-	}
+	rdb.HSet(ctx, "workers", podName, "[]")
 }
 
 func deregisterWorkerFromRedis(rdb *redis.Client) {
 	podName := os.Getenv("POD_NAME")
-	// Remove the worker name from the Redis set
-	rdb.SRem(ctx, "workers", podName)
+	rdb.HDel(ctx, "workers", podName)
 	log.Printf("Deregistered worker: %s", podName)
 }
 
@@ -82,28 +72,41 @@ func readinessHandler(w http.ResponseWriter, r *http.Request) {
 func updateDatabase() {
 	podName := os.Getenv("POD_NAME")
 
-	// Infinite loop to listen to new messages from Redis stream
 	for {
-		xreadResp, err := rdb.XRead(ctx, &redis.XReadArgs{
-			Streams: []string{"worker-status", "0"},
-			Count:   10,
-		}).Result()
-		if err != nil {
-			log.Printf("Failed to read from Redis stream: %v", err)
-			continue
-		}
+		time.Sleep(5 * time.Second) // Simulate some delay
 
-		for _, xMessage := range xreadResp[0].Messages {
-			for _, xValue := range xMessage.Values {
-				if id, ok := xValue.(int); ok {
-					// Update the database record with the given ID
-					_, err := db.Exec("UPDATE work_items SET value = value + 1, currentworker = $1 WHERE id = $2", podName, id)
-					if err != nil {
-						log.Printf("Failed to update database record with ID %d: %v", id, err)
-					}
-				}
+		// Log the start time of this update round
+		log.Printf("Starting update at: %s", time.Now())
+
+		// Retrieve IDs from Redis
+		idStr := rdb.HGet(ctx, "workers", podName).Val()
+
+		// Log the IDs this worker is about to process
+		log.Printf("Worker %s is processing IDs: %s", podName, idStr)
+
+		// Split the ID string into an array, separating by space
+		ids := strings.Fields(idStr) // Changed from Split to Fields to handle space-separated IDs
+
+		// Iterate through each ID and attempt to update the database
+		for _, id := range ids {
+			// Remove any extra whitespace and clean the ID
+			id = strings.TrimSpace(id)
+			id = strings.Trim(id, "[]")
+
+			// Update the record in the database
+			result, err := db.Exec("UPDATE work_items SET value = value + 1, currentWorker = $1 WHERE id = $2", podName, id)
+
+			if err != nil {
+				log.Printf("Failed to update database record with ID %s: %v", id, err)
+			} else {
+				// Log the number of affected rows
+				affected, _ := result.RowsAffected()
+				log.Printf("Number of rows affected by updating ID %s: %d", id, affected)
 			}
 		}
+
+		// Log the end time of this update round
+		log.Printf("Finished update at: %s", time.Now())
 	}
 }
 
