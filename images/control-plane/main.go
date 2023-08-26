@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"reflect"
 	"sort"
 	"time"
 
@@ -129,7 +130,7 @@ func evalSystem(rdb *redis.Client) {
 	fmt.Printf("| Records Count|    %3d    |    %3d    |\n", len(curRecordIDs), len(prevRecordIDs))
 	fmt.Println("|--------------------------------------|")
 
-	if len(curWorkers) == len(prevWorkers) && len(curRecordIDs) == len(prevRecordIDs) {
+	if reflect.DeepEqual(curWorkers, prevWorkers) && reflect.DeepEqual(curRecordIDs, prevRecordIDs) {
 		fmt.Println("| No change in status.                 |")
 		fmt.Println("----------------------------------------")
 	} else {
@@ -155,19 +156,26 @@ func hashString(s string) uint32 {
 }
 
 func rehash(rdb *redis.Client, curWorkers []string, curRecordIDs []string) {
-	// Number of virtual nodes per worker
-	const numVirtualNodes = 10
+	if len(curWorkers) == 0 {
+		// Handle zero workers case
+		log.Println("No workers are available. Clearing Redis hash.")
+		rdb.Del(ctx, "workers")
+		return
+	}
 
 	// Hash ring to hold both workers and IDs
 	hashRing := make(map[uint32]string)
 	var sortedKeys []uint32
 
-	// Hash each worker and its virtual nodes, then put them on the hash ring
+	// Number of virtual nodes for each worker
+	numVirtualNodes := 10
+
+	// Hash each worker and its virtual nodes, and put them on the hash ring
 	for _, worker := range curWorkers {
 		for i := 0; i < numVirtualNodes; i++ {
 			virtualNode := fmt.Sprintf("%s#%d", worker, i)
 			hash := hashString(virtualNode)
-			hashRing[hash] = worker
+			hashRing[hash] = worker // point back to the original worker
 			sortedKeys = append(sortedKeys, hash)
 		}
 	}
