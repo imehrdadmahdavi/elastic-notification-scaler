@@ -4,7 +4,6 @@ package main
 import (
 	"crypto/sha1"
 	"database/sql"
-	"encoding/hex"
 	"fmt"
 	"log"
 	"net/http"
@@ -145,56 +144,60 @@ func evalSystem(rdb *redis.Client) {
 	prevRecordIDs = curRecordIDs
 }
 
-func rehash(rdb *redis.Client, curWorkers []string, curRecordIDs []string) {
-	// Convert the IDs to a string representation
-	idStr := fmt.Sprintf("%v", curRecordIDs)
-	log.Printf("Converted IDs to string: %s", idStr)
-
-	// Update the list of IDs for each worker in the Redis hash
-	log.Println("Updating Redis hash")
-	for _, worker := range curWorkers {
-		rdb.HSet(ctx, "workers", worker, idStr)
-	}
-	log.Println("Updated Redis hash successfully")
-}
-
 // Hashing function
-func hashString(s string) string {
+func hashString(s string) uint32 {
 	h := sha1.New()
 	h.Write([]byte(s))
-	sha1Hash := hex.EncodeToString(h.Sum(nil))
-	return sha1Hash
+	sha1Hash := h.Sum(nil)
+
+	// We only take the first 4 bytes as the hash value
+	return uint32(sha1Hash[0])<<24 | uint32(sha1Hash[1])<<16 | uint32(sha1Hash[2])<<8 | uint32(sha1Hash[3])
 }
 
 func rehash(rdb *redis.Client, curWorkers []string, curRecordIDs []string) {
-	hashRing := make(map[string]string)
-	sortedKeys := []string{}
+	// Number of virtual nodes per worker
+	const numVirtualNodes = 10
 
-	// Hash each worker and put it on the hash ring
+	// Hash ring to hold both workers and IDs
+	hashRing := make(map[uint32]string)
+	var sortedKeys []uint32
+
+	// Hash each worker and its virtual nodes, then put them on the hash ring
 	for _, worker := range curWorkers {
-		hash := hashString(worker)
-		hashRing[hash] = worker
-		sortedKeys = append(sortedKeys, hash)
+		for i := 0; i < numVirtualNodes; i++ {
+			virtualNode := fmt.Sprintf("%s#%d", worker, i)
+			hash := hashString(virtualNode)
+			hashRing[hash] = worker
+			sortedKeys = append(sortedKeys, hash)
+		}
 	}
 
-	// Sort the keys to iterate over the hash ring in order
-	sort.Strings(sortedKeys)
+	// Sort the keys to create an ordered ring
+	sort.Slice(sortedKeys, func(i, j int) bool {
+		return sortedKeys[i] < sortedKeys[j]
+	})
 
-	// Distribute record IDs across workers
+	// Initialize a map to hold the distribution of IDs across workers
 	distribution := make(map[string][]string)
+
+	// Distribute IDs to the closest worker on the ring
 	for _, id := range curRecordIDs {
 		hash := hashString(id)
-		// Find the appropriate worker for the hash
-		for _, key := range sortedKeys {
-			if hash <= key {
-				distribution[hashRing[key]] = append(distribution[hashRing[key]], id)
+		var targetWorker string
+
+		for _, workerHash := range sortedKeys {
+			if hash <= workerHash {
+				targetWorker = hashRing[workerHash]
 				break
 			}
 		}
-		// If hash is larger than any worker hash, assign to the first worker in the sorted list
-		if _, exists := distribution[hash]; !exists {
-			distribution[hashRing[sortedKeys[0]]] = append(distribution[hashRing[sortedKeys[0]]], id)
+
+		// If hash is greater than any worker hash, assign to the first worker
+		if targetWorker == "" {
+			targetWorker = hashRing[sortedKeys[0]]
 		}
+
+		distribution[targetWorker] = append(distribution[targetWorker], id)
 	}
 
 	// Update Redis to reflect the new distribution
