@@ -73,7 +73,7 @@ func updateDatabase() {
 	podName := os.Getenv("POD_NAME")
 
 	for {
-		time.Sleep(5 * time.Second) // Simulate some delay
+		time.Sleep(1 * time.Second)
 
 		// Log the start time of this update round
 		log.Printf("Starting update at: %s", time.Now())

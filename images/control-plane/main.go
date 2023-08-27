@@ -70,13 +70,13 @@ func setupDatabase() {
 		log.Fatalf("Failed to create new table: %v", err)
 	}
 
-	for i := 1; i <= 5; i++ {
+	for i := 1; i <= 10; i++ {
 		_, err := db.Exec("INSERT INTO work_items (value) VALUES (DEFAULT)")
 		if err != nil {
 			log.Printf("Failed to insert record %d: %v", i, err)
 		}
 	}
-	log.Printf("Successfully inserted 5 sample record into work_items table")
+	log.Printf("Successfully inserted 10 sample record into work_items table")
 }
 
 func connectToRedis() *redis.Client {
@@ -118,27 +118,26 @@ func evalSystem(rdb *redis.Client) {
 
 	// Fetch the worker keys from Redis hash
 	curWorkers = rdb.HKeys(ctx, "workers").Val()
+	sort.Strings(curWorkers)
+	sort.Strings(prevWorkers)
+
+	// Sort curRecordIDs and prevRecordIDs
+	sort.Strings(curRecordIDs)
+	sort.Strings(prevRecordIDs)
 
 	// Print system status
-	log.Printf("")
-	fmt.Println("----------------------------------------")
-	fmt.Println("|            System Status             |")
-	fmt.Println("|--------------------------------------|")
-	fmt.Println("|              |  Current  |  Previous |")
-	fmt.Println("|--------------------------------------|")
-	fmt.Printf("| Running Pods |    %3d    |    %3d    |\n", len(curWorkers), len(prevWorkers))
-	fmt.Printf("| Records Count|    %3d    |    %3d    |\n", len(curRecordIDs), len(prevRecordIDs))
-	fmt.Println("|--------------------------------------|")
+	log.Printf("Current number of running pods     :%3d", len(curWorkers))
+	log.Printf("Previous number of running pods    :%3d", len(prevWorkers))
+	log.Printf("Current number of records in table :%3d", len(curRecordIDs))
+	log.Printf("Previous number of records in table:%3d", len(prevRecordIDs))
 
 	if reflect.DeepEqual(curWorkers, prevWorkers) && reflect.DeepEqual(curRecordIDs, prevRecordIDs) {
-		fmt.Println("| No change in status.                 |")
-		fmt.Println("----------------------------------------")
+		log.Printf("No change in status, redistribution not needed.")
 	} else {
 		fmt.Println("| Change detected, rehashing started!  |")
-		fmt.Println("----------------------------------------")
+		log.Printf("System status change detected, redistribution started...")
 		rehash(rdb, curWorkers, curRecordIDs)
 	}
-	fmt.Println()
 
 	// Update global variables for the previous status
 	prevWorkers = curWorkers
@@ -236,14 +235,12 @@ func main() {
 
 	rdb := connectToRedis()
 
-	// Create a new ticker that triggers every 5 seconds
-	ticker := time.NewTicker(5 * time.Second)
+	ticker := time.NewTicker(1 * time.Second)
 
 	go func() {
 		for {
 			select {
 			case <-ticker.C:
-				// Update and print system status every 5 seconds
 				evalSystem(rdb)
 			}
 		}
