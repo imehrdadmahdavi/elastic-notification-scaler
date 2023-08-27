@@ -67,25 +67,27 @@ func updateDatabase() {
 
 		// Retrieve IDs from Redis
 		idStr := rdb.HGet(ctx, "workers", podName).Val()
-		log.Printf("Worker %s is processing IDs: %s", podName, idStr)
+		if idStr != "" {
+			log.Printf("Worker %s is processing IDs: %s", podName, idStr)
 
-		// Split the ID string into an array, separating by space
-		ids := strings.Fields(idStr)
+			// Split the ID string into an array, separating by space
+			ids := strings.Fields(idStr)
 
-		for _, id := range ids {
-			id = strings.TrimSpace(id)
-			id = strings.Trim(id, "[]")
+			for _, id := range ids {
+				id = strings.TrimSpace(id)
+				id = strings.Trim(id, "[]")
 
-			result, err := db.Exec("UPDATE work_items SET value = value + 1, currentWorker = $1 WHERE id = $2", podName, id)
+				result, err := db.Exec("UPDATE work_items SET value = value + 1, currentWorker = $1 WHERE id = $2", podName, id)
 
-			if err != nil {
-				log.Printf("Failed to update database record with ID %s: %v", id, err)
-			} else {
-				affected, _ := result.RowsAffected()
-				log.Printf("Worker processed %d row with ID: %s", affected, id)
+				if err != nil {
+					log.Printf("Failed to update database record with ID %s: %v", id, err)
+				} else {
+					affected, _ := result.RowsAffected()
+					log.Printf("Worker processed %d row with ID: %s", affected, id)
+				}
 			}
+			log.Printf("Finished update at: %s", time.Now())
 		}
-		log.Printf("Finished update at: %s", time.Now())
 	}
 }
 
