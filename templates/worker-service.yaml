@@ -11,4 +11,4 @@ spec:
     - name: tcp
       protocol: TCP
       port: 80
-      targetPort: 8080  # Assuming this is the port your worker container listens on
+      targetPort: 8080

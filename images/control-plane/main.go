@@ -1,4 +1,3 @@
-// control-plane
 package main
 
 import (
@@ -21,8 +20,12 @@ import (
 var prevWorkers []string
 var prevRecordIDs []string
 
+// Used for database and Redis operations.
 var ctx = context.Background()
 var db *sql.DB
+
+var DefaultNumRows = 10
+var NumVirtualNodes = 10
 
 func setupDatabase() {
 	connStr := fmt.Sprintf("host=%s user=%s password=%s dbname=%s sslmode=disable",
@@ -41,6 +44,7 @@ func setupDatabase() {
 		log.Fatalf("Failed to ping the database: %v", err)
 	}
 
+	// Check if a table 'work_items' already exists; if yes, drop it.
 	var tableName string
 	err = db.QueryRow("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'work_items'").Scan(&tableName)
 	if err != nil && err != sql.ErrNoRows {
@@ -54,6 +58,7 @@ func setupDatabase() {
 		}
 	}
 
+	// Enable pgcrypto extension which allow using gen_random_uuid()
 	_, err = db.Exec("CREATE EXTENSION IF NOT EXISTS \"pgcrypto\";")
 	if err != nil {
 		log.Fatalf("Failed to enable pgcrypto extension: %v", err)
@@ -70,7 +75,8 @@ func setupDatabase() {
 		log.Fatalf("Failed to create new table: %v", err)
 	}
 
-	for i := 1; i <= 10; i++ {
+	// Insert default rows into the table.
+	for i := 1; i <= DefaultNumRows; i++ {
 		_, err := db.Exec("INSERT INTO work_items (value) VALUES (DEFAULT)")
 		if err != nil {
 			log.Printf("Failed to insert record %d: %v", i, err)
@@ -94,12 +100,13 @@ func connectToRedis() *redis.Client {
 	return rdb
 }
 
+// evalSystem checks the current state of the system and decides whether to redistribute.
 func evalSystem(rdb *redis.Client) {
-	// Variables for the current status
+	// Variables for the current state of the system
 	var curWorkers []string
 	var curRecordIDs []string
 
-	// Query the IDs of records in the work_items table
+	// Fetch IDs from database
 	rows, err := db.Query("SELECT id FROM work_items")
 	if err != nil {
 		log.Printf("Failed to fetch IDs from the database: %v", err)
@@ -120,8 +127,6 @@ func evalSystem(rdb *redis.Client) {
 	curWorkers = rdb.HKeys(ctx, "workers").Val()
 	sort.Strings(curWorkers)
 	sort.Strings(prevWorkers)
-
-	// Sort curRecordIDs and prevRecordIDs
 	sort.Strings(curRecordIDs)
 	sort.Strings(prevRecordIDs)
 
@@ -144,34 +149,30 @@ func evalSystem(rdb *redis.Client) {
 	prevRecordIDs = curRecordIDs
 }
 
-// Hashing function
 func hashString(s string) uint32 {
 	h := sha1.New()
 	h.Write([]byte(s))
 	sha1Hash := h.Sum(nil)
 
-	// We only take the first 4 bytes as the hash value
+	// Only taking the first 4 bytes as the hash value
 	return uint32(sha1Hash[0])<<24 | uint32(sha1Hash[1])<<16 | uint32(sha1Hash[2])<<8 | uint32(sha1Hash[3])
 }
 
 func rehash(rdb *redis.Client, curWorkers []string, curRecordIDs []string) {
+	// Handle zero workers case
 	if len(curWorkers) == 0 {
-		// Handle zero workers case
 		log.Println("No workers are available. Clearing Redis hash.")
 		rdb.Del(ctx, "workers")
 		return
 	}
 
-	// Hash ring to hold both workers and IDs
+	// Create a hash ring and sort it
 	hashRing := make(map[uint32]string)
 	var sortedKeys []uint32
 
-	// Number of virtual nodes for each worker
-	numVirtualNodes := 10
-
-	// Hash each worker and its virtual nodes, and put them on the hash ring
+	// Insert workers and their virtual nodes into the hash ring
 	for _, worker := range curWorkers {
-		for i := 0; i < numVirtualNodes; i++ {
+		for i := 0; i < NumVirtualNodes; i++ {
 			virtualNode := fmt.Sprintf("%s#%d", worker, i)
 			hash := hashString(virtualNode)
 			hashRing[hash] = worker // point back to the original worker
@@ -213,7 +214,7 @@ func rehash(rdb *redis.Client, curWorkers []string, curRecordIDs []string) {
 		idStr := fmt.Sprintf("%v", ids)
 		rdb.HSet(ctx, "workers", worker, idStr)
 	}
-	log.Println("Updated Redis hash successfully")
+	log.Println("Updated Redis hash with new distribution successfully")
 }
 
 func healthHandler(w http.ResponseWriter, r *http.Request) {

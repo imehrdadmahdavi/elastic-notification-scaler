@@ -1,4 +1,3 @@
-// worker
 package main
 
 import (
@@ -59,6 +58,37 @@ func connectToRedis() {
 	}
 }
 
+func updateDatabase() {
+	podName := os.Getenv("POD_NAME")
+
+	for {
+		time.Sleep(1 * time.Second)
+		log.Printf("Starting update at: %s", time.Now())
+
+		// Retrieve IDs from Redis
+		idStr := rdb.HGet(ctx, "workers", podName).Val()
+		log.Printf("Worker %s is processing IDs: %s", podName, idStr)
+
+		// Split the ID string into an array, separating by space
+		ids := strings.Fields(idStr)
+
+		for _, id := range ids {
+			id = strings.TrimSpace(id)
+			id = strings.Trim(id, "[]")
+
+			result, err := db.Exec("UPDATE work_items SET value = value + 1, currentWorker = $1 WHERE id = $2", podName, id)
+
+			if err != nil {
+				log.Printf("Failed to update database record with ID %s: %v", id, err)
+			} else {
+				affected, _ := result.RowsAffected()
+				log.Printf("Worker processed %d row with ID: %s", affected, id)
+			}
+		}
+		log.Printf("Finished update at: %s", time.Now())
+	}
+}
+
 func healthHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprint(w, "Healthy!")
@@ -67,47 +97,6 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 func readinessHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprint(w, "Ready!")
-}
-
-func updateDatabase() {
-	podName := os.Getenv("POD_NAME")
-
-	for {
-		time.Sleep(1 * time.Second)
-
-		// Log the start time of this update round
-		log.Printf("Starting update at: %s", time.Now())
-
-		// Retrieve IDs from Redis
-		idStr := rdb.HGet(ctx, "workers", podName).Val()
-
-		// Log the IDs this worker is about to process
-		log.Printf("Worker %s is processing IDs: %s", podName, idStr)
-
-		// Split the ID string into an array, separating by space
-		ids := strings.Fields(idStr) // Changed from Split to Fields to handle space-separated IDs
-
-		// Iterate through each ID and attempt to update the database
-		for _, id := range ids {
-			// Remove any extra whitespace and clean the ID
-			id = strings.TrimSpace(id)
-			id = strings.Trim(id, "[]")
-
-			// Update the record in the database
-			result, err := db.Exec("UPDATE work_items SET value = value + 1, currentWorker = $1 WHERE id = $2", podName, id)
-
-			if err != nil {
-				log.Printf("Failed to update database record with ID %s: %v", id, err)
-			} else {
-				// Log the number of affected rows
-				affected, _ := result.RowsAffected()
-				log.Printf("Number of rows affected by updating ID %s: %d", id, affected)
-			}
-		}
-
-		// Log the end time of this update round
-		log.Printf("Finished update at: %s", time.Now())
-	}
 }
 
 func main() {
