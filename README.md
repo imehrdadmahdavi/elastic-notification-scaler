@@ -72,6 +72,8 @@ TTR for disruption/size changes is important.
 - Helm v3.x
 - Kubernetes v1.27.x
 
+## **Architecture**
+
 ![Architecture Diagram](static/architecture.png)
 
 ## ****Quick Start****
