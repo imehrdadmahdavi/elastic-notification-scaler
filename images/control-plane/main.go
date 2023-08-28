@@ -161,8 +161,7 @@ func hashString(s string) uint32 {
 func rehash(rdb *redis.Client, curWorkers []string, curRecordIDs []string) {
 	// Handle zero workers case
 	if len(curWorkers) == 0 {
-		log.Println("No workers are available. Clearing Redis hash.")
-		rdb.Del(ctx, "workers")
+		log.Println("No workers are available. Nothing to distribute!")
 		return
 	}
 

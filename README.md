@@ -114,3 +114,11 @@ POD_NAME=$(kubectl get pods -l app=redis -o=jsonpath='{.items[0].metadata.name}'
 ```bash
 helm upgrade notifi-scaler-release . --set worker.replicaCount=<number-of-replicas>
 ```
+
+## **Areas of Improvement**
+
+- For concurrency management, I have used atomic operations in Redis to mitigate risks. However, that is just the first layer of defense against issues like race conditions and deadlocks. To robustly safeguard the system, we need to integrate advanced synchronization techniques. That could mean utilizing locks at the Go or process level, or perhaps leveraging database-level transactions.
+- During my testing, both the control plane and the worker nodes showed they can cope with sudden workload spikes. However, if we want to be bulletproof against extreme variations in load, we should put in place rate-limiting as well as back-off and retry strategies.
+- For resilience, we need to build in failover mechanisms for our key components (control plane, Redis, and Postgres). This could involve setting up the control plane in a clustered manner and enabling data replication for the databases, making our architecture much more resistant to individual component failures.
+- Right now, we have basic monitoring and logging, but we could greatly benefit from a more exhaustive setup that offers real-time insights into system performance and health.
+- On the security side, it is essential to safeguard the communication channels with SSL/TLS encryption and to enforce Role-Based Access Control (RBAC) for system interactions. This will improve system integrity.
