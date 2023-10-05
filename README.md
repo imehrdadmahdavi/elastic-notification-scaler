@@ -2,7 +2,7 @@
 
 ## **Overview**
 
-The **`notifi-scaler`** project is a Kubernetes-based system designed to scale works horizontally among workers based on the number of values in a table. The project includes Kubernetes manifests to deploy a control plane, workers, and database components. The workers process subsets of the table, incrementing a **`Value`** column and updating the **`CurrentWorker`** column as they go along.
+The **`elastic-table-kube`** project is a Kubernetes-based system designed to scale works horizontally among workers based on the number of values in a table. The project includes Kubernetes manifests to deploy a control plane, workers, and database components. The workers process subsets of the table, incrementing a **`Value`** column and updating the **`CurrentWorker`** column as they go along.
 
 The primary objective is to balance the workload across multiple worker nodes and to adapt to changes in the table or the number of workers dynamically. To achieve that, a consistent hashing algorithm in implemented.
 
