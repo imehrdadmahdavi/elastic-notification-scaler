@@ -2,13 +2,13 @@
 
 ## **Overview**
 
-The **`notifi-scaler`** project is a Kubernetes-based system designed to horizontally scale works among workers based on the number of values in a table. The project includes Kubernetes manifests to deploy a control plane, workers, and database components. The workers process subsets of the table, incrementing a **`Value`** column and updating the **`CurrentWorker`** column as they go along.
+The **`notifi-scaler`** project is a Kubernetes-based system designed to scale works horizontally among workers based on the number of values in a table. The project includes Kubernetes manifests to deploy a control plane, workers, and database components. The workers process subsets of the table, incrementing a **`Value`** column and updating the **`CurrentWorker`** column as they go along.
 
 The primary objective is to balance the workload across multiple worker nodes and to adapt to changes in the table or the number of workers dynamically. To achieve that, a consistent hashing algorithm in implemented.
 
 ## System Requirement
 
-Given a table of values with the schema below, create a system that will horizontally scale up and down workers based on the number of values in the table. When one worker that’s processing the subset of the table is removed, the workload should be distributed evenly across the other workers until a new worker node is added.
+Given a table of values with the following schema, our system horizontally scale up and down workers based on the number of values in the table. When a worker processing a subset of the table is removed, the workload will be evenly distributed across the remaining workers until a new worker node is added.
 
 Table Schema:
 
@@ -16,23 +16,9 @@ Table Schema:
 - Value: integer
 - CurrentWorker: string
 
-While a worker is processing a subset, it should increment the Value by 1 every second, and ensure the CurrentWorker value is set to the worker pod’s name.
+While a worker is processing a subset, it will increment the Value by 1 every second and set the CurrentWorker value to the name of the worker pod.
 
-Every second, the worker should print the list of ID’s that are being watched in the table. These should be stable if there’s no change to the amount of values in the table, or number of workers available. Upon change to either, there should be a redistribution done, minimizing the amount of change across workers. (hint: consistent hashing)
-
-You can use any database of your choice.
-
-You are not allowed to use the k8s controlplane APIs.
-
-**Acceptance criteria:**
-
-I should be able to helm deploy an app (can be written in golang or any other language of preference) to my kubernetes cluster.
-
-Viewing the logs of the worker nodes should show the output described above.
-
-If I change the deployment size, I should see the logs representing the redistribution.
-
-TTR for disruption/size changes is important.
+Every second, the worker will print the list of IDs being watched in the table. This list will remain stable if there are no changes to the number of values in the table or the number of available workers. However, if there is a change to either, a redistribution will be performed to minimize the amount of change across workers using consistent hashing algorithm.
 
 ## Structure
 
